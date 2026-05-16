@@ -105,7 +105,7 @@ function Index() {
             onEnd={(result) => {
               const won = result.home > result.away;
               const cupScore = { you: screen.cupScore.you + (won ? 1 : 0), opp: screen.cupScore.opp + (won ? 0 : 1) };
-              setScreen({ s: "result", ...screen, score: result, cupScore });
+              setScreen({ s: "result", mode: screen.mode, home: screen.home, away: screen.away, round: screen.round, total: screen.total, score: result, cupScore });
             }}
           />
         </div>
