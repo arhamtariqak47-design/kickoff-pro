@@ -526,11 +526,37 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
         const press = p.role === "FWD" ? 0.3 : p.role === "MID" ? 0.5 : p.role === "DEF" ? 0.6 : 0.2;
         tx = p.home.x * (1 - press) + s.ball.pos.x * press;
         tz = p.home.z * (1 - press) + s.ball.pos.z * press;
-        // GK stays near goal
-        if (p.role === "GK") {
-          tx = p.home.x;
-          tz = Math.max(-GOAL_W / 2, Math.min(GOAL_W / 2, s.ball.pos.z * 0.4));
+      }
+      // GK behavior overrides above — actively tracks/saves ball
+      if (p.role === "GK") {
+        const goalX = p.team === "home" ? -PW / 2 : PW / 2;
+        // predict ball's z when it reaches goal line
+        const bvx = s.ball.vel.x;
+        let predZ = s.ball.pos.z;
+        if (Math.abs(bvx) > 1) {
+          const t = (goalX - s.ball.pos.x) / bvx;
+          if (t > 0 && t < 1.5) {
+            predZ = s.ball.pos.z + s.ball.vel.z * t;
+          }
         }
+        // clamp within goal mouth + a bit
+        const gW = GOAL_W / 2 + 1.5;
+        tz = Math.max(-gW, Math.min(gW, predZ));
+        // come off the line slightly when ball is close, hug line when far
+        const ballDist = Math.abs(s.ball.pos.x - goalX);
+        const offLine = Math.max(0, Math.min(3.5, 6 - ballDist * 0.15));
+        tx = goalX + (p.team === "home" ? offLine : -offLine);
+        // diving lunge: extra acceleration when ball is incoming fast
+        const incoming = (p.team === "home" && bvx < -6) || (p.team === "away" && bvx > 6);
+        const urgency = incoming && ballDist < 25 ? 3.2 : 1.6;
+        p.vel.x += (tx - p.pos.x) * urgency * dt * 3;
+        p.vel.z += (tz - p.pos.z) * urgency * dt * 3;
+        const gsp = Math.hypot(p.vel.x, p.vel.z);
+        const gmax = incoming ? 14 : 8;
+        if (gsp > gmax) { p.vel.x = (p.vel.x / gsp) * gmax; p.vel.z = (p.vel.z / gsp) * gmax; }
+        p.vel.x *= 0.9; p.vel.z *= 0.9;
+        if (gsp > 0.5) p.mesh.rotation.y = Math.atan2(p.vel.x, p.vel.z);
+        return;
       }
       p.vel.x += (tx - p.pos.x) * 0.9 * dt;
       p.vel.z += (tz - p.pos.z) * 0.9 * dt;
