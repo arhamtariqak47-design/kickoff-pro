@@ -561,7 +561,7 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       p.vel.x += (tx - p.pos.x) * 0.9 * dt;
       p.vel.z += (tz - p.pos.z) * 0.9 * dt;
       const sp = Math.hypot(p.vel.x, p.vel.z);
-      const max = p.role === "GK" ? 6 : p.role === "FWD" ? 10 : 9;
+      const max = p.role === "FWD" ? 10 : 9;
       if (sp > max) { p.vel.x = (p.vel.x / sp) * max; p.vel.z = (p.vel.z / sp) * max; }
       p.vel.x *= 0.92; p.vel.z *= 0.92;
       if (Math.abs(p.vel.x) + Math.abs(p.vel.z) > 0.5) {
