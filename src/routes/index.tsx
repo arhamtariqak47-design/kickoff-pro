@@ -37,10 +37,11 @@ function Index() {
         </header>
         <div className="grid gap-4 w-full max-w-md">
           <ModeButton title="Quick Play" desc="Jump straight into a single match" onClick={() => setScreen({ s: "teamSelect", mode: "quick", pick: "home" })} />
+          <ModeButton title="2 Players" desc="Local versus — P1 keys vs P2 keys on one keyboard" onClick={() => setScreen({ s: "teamSelect", mode: "vs", pick: "home" })} />
           <ModeButton title="Career" desc="Play a 5-match season as your club" onClick={() => setScreen({ s: "teamSelect", mode: "career", pick: "home" })} />
           <ModeButton title="Tournament" desc="Knockout cup — win 3 in a row" onClick={() => setScreen({ s: "teamSelect", mode: "tournament", pick: "home" })} />
         </div>
-        <footer className="mt-16 text-xs text-muted-foreground/60">Built for keyboard · Arrows · A · S · D</footer>
+        <footer className="mt-16 text-xs text-muted-foreground/60">P1: Arrows · A · S · D &nbsp;·&nbsp; P2: I J K L · U · G · H</footer>
       </main>
     );
   }
