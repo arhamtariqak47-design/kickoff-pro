@@ -6,12 +6,14 @@ interface Props {
   home: Team;
   away: Team;
   duration?: number;
+  twoPlayer?: boolean;
   onEnd: (result: { home: number; away: number }) => void;
 }
 
 const PW = 90;
 const PH = 56;
 const GOAL_W = 14;
+const TEAM_SIZE = 11;
 
 interface Player {
   mesh: THREE.Group;
@@ -23,10 +25,10 @@ interface Player {
   legL: THREE.Mesh;
   legR: THREE.Mesh;
   walkPhase: number;
-  celebrate: number; // seconds remaining
+  celebrate: number;
 }
 
-export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
+export function PitchGame({ home, away, duration = 90, twoPlayer = false, onEnd }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [score, setScore] = useState({ home: 0, away: 0 });
   const [time, setTime] = useState(duration);
@@ -35,20 +37,22 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
   const stateRef = useRef<{
     players: Player[];
     ball: { mesh: THREE.Mesh; pos: THREE.Vector3; vel: THREE.Vector3; owner: number | null };
-    controlIdx: number;
+    controlIdxHome: number;
+    controlIdxAway: number;
+    twoPlayer: boolean;
     keys: Record<string, boolean>;
     score: { home: number; away: number };
     paused: boolean;
-    lastShoot: number;
-    lastPass: number;
-    lastSwitch: number;
+    lastShootHome: number; lastPassHome: number; lastSwitchHome: number;
+    lastShootAway: number; lastPassAway: number; lastSwitchAway: number;
     camera: THREE.PerspectiveCamera;
-    indicator: THREE.Mesh;
+    indicatorHome: THREE.Mesh;
+    indicatorAway: THREE.Mesh;
     passAim: THREE.Group;
     shotAim: THREE.Group;
     passTargetIdx: number | null;
     cameraShake: number;
-    celebration: number; // overall celebration timer
+    celebration: number;
   }>(null!);
 
   useEffect(() => {
@@ -58,7 +62,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
 
     const scene = new THREE.Scene();
 
-    // Sky gradient background via canvas
     const skyCanvas = document.createElement("canvas");
     skyCanvas.width = 16; skyCanvas.height = 256;
     const sctx = skyCanvas.getContext("2d")!;
@@ -84,7 +87,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     mount.appendChild(renderer.domElement);
 
-    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
     sun.position.set(40, 80, 30);
@@ -96,7 +98,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     sun.shadow.camera.bottom = -50;
     scene.add(sun);
 
-    // Floodlights at 4 corners
     const flPositions = [
       [-PW / 2 - 18, PH / 2 + 18],
       [PW / 2 + 18, PH / 2 + 18],
@@ -124,7 +125,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       scene.add(sl.target);
     });
 
-    // Pitch stripes
     const stripeCount = 14;
     for (let i = 0; i < stripeCount; i++) {
       const w = PW / stripeCount;
@@ -140,7 +140,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       scene.add(m);
     }
 
-    // Outer ground
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(400, 300),
       new THREE.MeshStandardMaterial({ color: 0x1a2a1a, roughness: 1 }),
@@ -150,7 +149,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Pitch lines
     const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff });
     const addLine = (pts: THREE.Vector3[]) => {
       const g = new THREE.BufferGeometry().setFromPoints(pts);
@@ -181,7 +179,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       ]);
     });
 
-    // Goals
     const goalMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
     const netMat = new THREE.MeshStandardMaterial({ color: 0xffffff, opacity: 0.3, transparent: true, side: THREE.DoubleSide });
     [-1, 1].forEach((s) => {
@@ -207,7 +204,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       scene.add(netTop);
     });
 
-    // Crowd texture (procedural)
     const crowdCanvas = document.createElement("canvas");
     crowdCanvas.width = 256; crowdCanvas.height = 64;
     const cctx = crowdCanvas.getContext("2d")!;
@@ -221,14 +217,12 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     const crowdTex = new THREE.CanvasTexture(crowdCanvas);
     crowdTex.wrapS = THREE.RepeatWrapping;
 
-    // Stadium stands (sloped) with crowd
     const buildStand = (cx: number, cz: number, length: number, depth: number, alongX: boolean) => {
       const baseMat = new THREE.MeshStandardMaterial({ color: 0x222a2f, roughness: 0.95 });
       const base = new THREE.Mesh(new THREE.BoxGeometry(alongX ? length : depth, 2, alongX ? depth : length), baseMat);
       base.position.set(cx, 1, cz);
       base.receiveShadow = true;
       scene.add(base);
-      // Tiered crowd plane
       const tier = new THREE.Mesh(
         new THREE.PlaneGeometry(length, 14),
         new THREE.MeshStandardMaterial({ map: crowdTex.clone(), roughness: 1 }),
@@ -245,7 +239,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
         tier.position.x = cx + (cx > 0 ? -2 : 2);
       }
       scene.add(tier);
-      // Roof
       const roof = new THREE.Mesh(
         new THREE.BoxGeometry(alongX ? length + 4 : depth + 2, 0.6, alongX ? depth + 2 : length + 4),
         new THREE.MeshStandardMaterial({ color: 0x111418, roughness: 0.7 }),
@@ -259,7 +252,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     buildStand(-PW / 2 - 14, 0, PH + 14, 14, false);
     buildStand(PW / 2 + 14, 0, PH + 14, 14, false);
 
-    // Scoreboard above one stand
     const scoreboard = new THREE.Mesh(
       new THREE.BoxGeometry(24, 6, 1),
       new THREE.MeshStandardMaterial({ color: 0x0b0b0b, emissive: 0x1a1a1a }),
@@ -267,7 +259,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     scoreboard.position.set(0, 22, -PH / 2 - 14);
     scene.add(scoreboard);
 
-    // Player builder with animatable legs
     const makePlayer = (color: string, secondary: string) => {
       const g = new THREE.Group();
       const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.6 });
@@ -291,13 +282,19 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       return { group: g, legL, legR: legR as THREE.Mesh };
     };
 
+    // 4-3-3 with 1 GK + 10 outfield = 11
     const formation = [
-      { role: "GK" as const, x: -0.46, z: 0 },
-      { role: "DEF" as const, x: -0.32, z: -0.22 },
-      { role: "DEF" as const, x: -0.32, z: 0.22 },
-      { role: "MID" as const, x: -0.12, z: 0 },
-      { role: "FWD" as const, x: -0.05, z: -0.18 },
-      { role: "FWD" as const, x: -0.05, z: 0.18 },
+      { role: "GK" as const,  x: -0.46, z:  0 },
+      { role: "DEF" as const, x: -0.34, z: -0.32 },
+      { role: "DEF" as const, x: -0.34, z: -0.11 },
+      { role: "DEF" as const, x: -0.34, z:  0.11 },
+      { role: "DEF" as const, x: -0.34, z:  0.32 },
+      { role: "MID" as const, x: -0.16, z: -0.20 },
+      { role: "MID" as const, x: -0.16, z:  0 },
+      { role: "MID" as const, x: -0.16, z:  0.20 },
+      { role: "FWD" as const, x: -0.04, z: -0.22 },
+      { role: "FWD" as const, x: -0.04, z:  0 },
+      { role: "FWD" as const, x: -0.04, z:  0.22 },
     ];
     const players: Player[] = [];
     formation.forEach((f) => {
@@ -316,7 +313,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       players.push({ mesh: group, pos, vel: new THREE.Vector3(), team: "away", role: f.role, home: pos.clone(), legL, legR, walkPhase: 0, celebrate: 0 });
     });
 
-    // Ball
     const ball = new THREE.Mesh(
       new THREE.SphereGeometry(0.5, 24, 24),
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }),
@@ -325,16 +321,20 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     ball.position.set(0, 0.5, 0);
     scene.add(ball);
 
-    // Control indicator
-    const indicator = new THREE.Mesh(
-      new THREE.RingGeometry(1.0, 1.3, 32),
-      new THREE.MeshBasicMaterial({ color: 0xfde047, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
-    );
-    indicator.rotation.x = -Math.PI / 2;
-    indicator.position.y = 0.05;
-    scene.add(indicator);
+    const makeIndicator = (color: number) => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(1.0, 1.3, 32),
+        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 0.05;
+      scene.add(m);
+      return m;
+    };
+    const indicatorHome = makeIndicator(0xfde047);
+    const indicatorAway = makeIndicator(0xf472b6);
+    indicatorAway.visible = twoPlayer;
 
-    // Aim HUD: pass aim (cyan) and shot aim (red) — built as flat arrow groups
     const buildAimArrow = (color: number) => {
       const g = new THREE.Group();
       const shaft = new THREE.Mesh(
@@ -363,13 +363,17 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     stateRef.current = {
       players,
       ball: { mesh: ball, pos: new THREE.Vector3(0, 0.5, 0), vel: new THREE.Vector3(), owner: null },
-      controlIdx: 4,
+      controlIdxHome: 9,
+      controlIdxAway: TEAM_SIZE + 9,
+      twoPlayer,
       keys: {},
       score: { home: 0, away: 0 },
       paused: false,
-      lastShoot: 0, lastPass: 0, lastSwitch: 0,
+      lastShootHome: 0, lastPassHome: 0, lastSwitchHome: 0,
+      lastShootAway: 0, lastPassAway: 0, lastSwitchAway: 0,
       camera,
-      indicator,
+      indicatorHome,
+      indicatorAway,
       passAim,
       shotAim,
       passTargetIdx: null,
@@ -438,7 +442,7 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     s.players.forEach((p) => { p.pos.copy(p.home); p.vel.set(0, 0, 0); });
     s.ball.pos.set(0, 0.5, 0);
     s.ball.vel.set(0, 0, 0);
-    s.ball.owner = kickoff === "home" ? 4 : 10;
+    s.ball.owner = kickoff === "home" ? s.controlIdxHome : s.controlIdxAway;
   }
 
   function findPassTarget(s: typeof stateRef.current, team: "home" | "away") {
@@ -452,7 +456,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       const dz = p.pos.z - owner.pos.z;
       const dist = Math.hypot(dx, dz);
       if (dist < 4 || dist > 40) return;
-      // prefer forward teammates
       const forward = dx * attackDir;
       const sc = forward * 1.5 - dist * 0.4;
       if (sc > bestScore) { bestScore = sc; best = i; }
@@ -460,16 +463,38 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     return best;
   }
 
-  function doPass(s: typeof stateRef.current) {
-    s.lastPass = performance.now();
+  function doPass(s: typeof stateRef.current, team: "home" | "away") {
     const owner = s.players[s.ball.owner!];
-    const best = s.passTargetIdx ?? findPassTarget(s, owner.team);
+    if (owner.team !== team) return;
+    const best = team === "home" && s.passTargetIdx !== null ? s.passTargetIdx : findPassTarget(s, team);
     if (best < 0) return;
     const t = s.players[best];
     const dir = new THREE.Vector3().subVectors(t.pos, owner.pos).setY(0).normalize();
     s.ball.vel.set(dir.x * 28, 0, dir.z * 28);
     s.ball.owner = null;
-    if (owner.team === "home") s.controlIdx = best;
+    if (team === "home") s.controlIdxHome = best;
+    else s.controlIdxAway = best;
+  }
+
+  function doShoot(s: typeof stateRef.current, team: "home" | "away") {
+    const owner = s.players[s.ball.owner!];
+    if (owner.team !== team) return;
+    const targetX = team === "home" ? PW / 2 : -PW / 2;
+    const targetZ = (Math.random() - 0.5) * GOAL_W * 0.8;
+    const dir = new THREE.Vector3(targetX - owner.pos.x, 0, targetZ - owner.pos.z).normalize();
+    s.ball.vel.set(dir.x * 44, 0, dir.z * 44);
+    s.ball.owner = null;
+  }
+
+  function moveControlled(p: Player, dx: number, dz: number, speed = 12) {
+    if (dx || dz) {
+      const m = Math.hypot(dx, dz);
+      p.vel.x = (dx / m) * speed;
+      p.vel.z = (dz / m) * speed;
+      p.mesh.rotation.y = Math.atan2(dx, dz);
+    } else {
+      p.vel.x *= 0.6; p.vel.z *= 0.6;
+    }
   }
 
   function step(dt: number) {
@@ -477,60 +502,68 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     if (s.paused) return;
     const k = s.keys;
 
-    // Switch
-    if (k["s"] && performance.now() - s.lastSwitch > 250) {
-      s.lastSwitch = performance.now();
+    // ===== P1 (home) input =====
+    if (k["s"] && performance.now() - s.lastSwitchHome > 250) {
+      s.lastSwitchHome = performance.now();
       let best = 1, bd = Infinity;
       s.players.forEach((p, i) => {
         if (p.team !== "home" || p.role === "GK") return;
         const d = p.pos.distanceToSquared(s.ball.pos);
         if (d < bd) { bd = d; best = i; }
       });
-      s.controlIdx = best;
+      s.controlIdxHome = best;
+    }
+    const cpH = s.players[s.controlIdxHome];
+    let h_dx = 0, h_dz = 0;
+    if (k["arrowleft"]) h_dx -= 1;
+    if (k["arrowright"]) h_dx += 1;
+    if (k["arrowup"]) h_dz -= 1;
+    if (k["arrowdown"]) h_dz += 1;
+    moveControlled(cpH, h_dx, h_dz);
+
+    // ===== P2 (away) input — only in 2-player mode =====
+    const cpA = s.players[s.controlIdxAway];
+    if (s.twoPlayer) {
+      if (k["g"] && performance.now() - s.lastSwitchAway > 250) {
+        s.lastSwitchAway = performance.now();
+        let best = TEAM_SIZE + 1, bd = Infinity;
+        s.players.forEach((p, i) => {
+          if (p.team !== "away" || p.role === "GK") return;
+          const d = p.pos.distanceToSquared(s.ball.pos);
+          if (d < bd) { bd = d; best = i; }
+        });
+        s.controlIdxAway = best;
+      }
+      let a_dx = 0, a_dz = 0;
+      if (k["j"]) a_dx -= 1;
+      if (k["l"]) a_dx += 1;
+      if (k["i"]) a_dz -= 1;
+      if (k["k"]) a_dz += 1;
+      moveControlled(cpA, a_dx, a_dz);
     }
 
-    // Move controlled
-    const cp = s.players[s.controlIdx];
-    let dx = 0, dz = 0;
-    if (k["arrowleft"]) dx -= 1;
-    if (k["arrowright"]) dx += 1;
-    if (k["arrowup"]) dz -= 1;
-    if (k["arrowdown"]) dz += 1;
-    const speed = 12;
-    if (dx || dz) {
-      const m = Math.hypot(dx, dz);
-      cp.vel.x = (dx / m) * speed;
-      cp.vel.z = (dz / m) * speed;
-      cp.mesh.rotation.y = Math.atan2(dx, dz);
-    } else {
-      cp.vel.x *= 0.6; cp.vel.z *= 0.6;
-    }
-
-    // AI for others (smarter — opponents press, attack, mark)
+    // ===== AI for everyone else =====
     s.players.forEach((p, i) => {
-      if (i === s.controlIdx && p.team === "home") return;
+      if (p.team === "home" && i === s.controlIdxHome) return;
+      if (p.team === "away" && s.twoPlayer && i === s.controlIdxAway) return;
+
       const attackX = p.team === "home" ? PW / 2 : -PW / 2;
       const hasBall = s.ball.owner === i;
       const ourPossession = s.ball.owner !== null && s.players[s.ball.owner].team === p.team;
       let tx: number, tz: number;
       if (hasBall) {
-        // dribble toward goal
         tx = attackX * 0.95;
         tz = s.ball.pos.z * 0.7;
       } else if (ourPossession) {
-        // make supporting run
         tx = p.home.x + (attackX - p.home.x) * 0.35;
         tz = p.home.z * 0.7 + (Math.sin(performance.now() * 0.001 + i) * 4);
       } else {
-        // defend / press
         const press = p.role === "FWD" ? 0.3 : p.role === "MID" ? 0.5 : p.role === "DEF" ? 0.6 : 0.2;
         tx = p.home.x * (1 - press) + s.ball.pos.x * press;
         tz = p.home.z * (1 - press) + s.ball.pos.z * press;
       }
-      // GK behavior overrides above — actively tracks/saves ball
       if (p.role === "GK") {
         const goalX = p.team === "home" ? -PW / 2 : PW / 2;
-        // predict ball's z when it reaches goal line
         const bvx = s.ball.vel.x;
         let predZ = s.ball.pos.z;
         if (Math.abs(bvx) > 1) {
@@ -539,14 +572,11 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
             predZ = s.ball.pos.z + s.ball.vel.z * t;
           }
         }
-        // clamp within goal mouth + a bit
         const gW = GOAL_W / 2 + 1.5;
         tz = Math.max(-gW, Math.min(gW, predZ));
-        // come off the line slightly when ball is close, hug line when far
         const ballDist = Math.abs(s.ball.pos.x - goalX);
         const offLine = Math.max(0, Math.min(3.5, 6 - ballDist * 0.15));
         tx = goalX + (p.team === "home" ? offLine : -offLine);
-        // diving lunge: extra acceleration when ball is incoming fast
         const incoming = (p.team === "home" && bvx < -6) || (p.team === "away" && bvx > 6);
         const urgency = incoming && ballDist < 25 ? 3.2 : 1.6;
         p.vel.x += (tx - p.pos.x) * urgency * dt * 3;
@@ -569,7 +599,7 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       }
     });
 
-    // Apply movement + leg animation + celebration
+    // Apply movement + animation
     s.players.forEach((p) => {
       p.pos.x += p.vel.x * dt;
       p.pos.z += p.vel.z * dt;
@@ -580,7 +610,6 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       const swing = Math.sin(p.walkPhase * 3) * Math.min(0.6, sp * 0.08);
       p.legL.rotation.x = swing;
       p.legR.rotation.x = -swing;
-      // celebration hop
       let yOff = 0;
       if (p.celebrate > 0) {
         p.celebrate -= dt;
@@ -590,7 +619,7 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       p.mesh.position.set(p.pos.x, yOff, p.pos.z);
     });
 
-    // Ball
+    // Ball physics
     if (s.ball.owner !== null) {
       const owner = s.players[s.ball.owner];
       const dir = owner.team === "home" ? 1 : -1;
@@ -606,7 +635,8 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
         const p = s.players[i];
         if (Math.hypot(p.pos.x - s.ball.pos.x, p.pos.z - s.ball.pos.z) < 1.3) {
           s.ball.owner = i;
-          if (p.team === "home") s.controlIdx = i;
+          if (p.team === "home") s.controlIdxHome = i;
+          else if (s.twoPlayer) s.controlIdxAway = i;
           break;
         }
       }
@@ -619,13 +649,15 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
     s.ball.mesh.rotation.x += s.ball.vel.z * 0.05;
     s.ball.mesh.rotation.z -= s.ball.vel.x * 0.05;
 
-    // Aim HUD — show when home controls ball
-    const homeHasBall = s.ball.owner !== null && s.players[s.ball.owner].team === "home";
-    if (homeHasBall) {
+    // Aim HUD — for whichever human team controls ball
+    const ownerTeam = s.ball.owner !== null ? s.players[s.ball.owner].team : null;
+    const aimTeam: "home" | "away" | null =
+      ownerTeam === "home" ? "home" :
+      ownerTeam === "away" && s.twoPlayer ? "away" : null;
+    if (aimTeam) {
       const owner = s.players[s.ball.owner!];
-      // pass aim
-      const ti = findPassTarget(s, "home");
-      s.passTargetIdx = ti;
+      const ti = findPassTarget(s, aimTeam);
+      s.passTargetIdx = aimTeam === "home" ? ti : null;
       if (ti >= 0) {
         const t = s.players[ti];
         const ddx = t.pos.x - owner.pos.x;
@@ -638,9 +670,8 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       } else {
         s.passAim.visible = false;
       }
-      // shot aim: toward right goal center
-      const gx = PW / 2, gz = 0;
-      const sdx = gx - owner.pos.x, sdz = gz - owner.pos.z;
+      const gx = aimTeam === "home" ? PW / 2 : -PW / 2;
+      const sdx = gx - owner.pos.x, sdz = 0 - owner.pos.z;
       const slen = Math.hypot(sdx, sdz);
       s.shotAim.visible = true;
       s.shotAim.position.set(owner.pos.x, 0.09, owner.pos.z);
@@ -652,39 +683,36 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       s.passTargetIdx = null;
     }
 
-    // Shoot
-    if (k["d"] && homeHasBall && performance.now() - s.lastShoot > 400) {
-      s.lastShoot = performance.now();
-      const shooter = s.players[s.ball.owner!];
-      const targetX = PW / 2;
-      const targetZ = (Math.random() - 0.5) * GOAL_W * 0.8;
-      const dir = new THREE.Vector3(targetX - shooter.pos.x, 0, targetZ - shooter.pos.z).normalize();
-      s.ball.vel.set(dir.x * 44, 0, dir.z * 44);
-      s.ball.owner = null;
+    // P1 shoot / pass
+    if (ownerTeam === "home") {
+      if (k["d"] && performance.now() - s.lastShootHome > 400) {
+        s.lastShootHome = performance.now();
+        doShoot(s, "home");
+      } else if ((k["a"] || k[" "]) && performance.now() - s.lastPassHome > 300) {
+        s.lastPassHome = performance.now();
+        doPass(s, "home");
+      }
     }
-    // Pass
-    if ((k["a"] || k[" "]) && homeHasBall && performance.now() - s.lastPass > 300) {
-      doPass(s);
+    // P2 shoot / pass
+    if (s.twoPlayer && ownerTeam === "away") {
+      if (k["h"] && performance.now() - s.lastShootAway > 400) {
+        s.lastShootAway = performance.now();
+        doShoot(s, "away");
+      } else if (k["u"] && performance.now() - s.lastPassAway > 300) {
+        s.lastPassAway = performance.now();
+        doPass(s, "away");
+      }
     }
 
-    // AI away actions
-    if (s.ball.owner !== null) {
+    // AI away actions (only if away is CPU)
+    if (!s.twoPlayer && s.ball.owner !== null) {
       const owner = s.players[s.ball.owner];
       if (owner.team === "away") {
         const distToGoal = Math.hypot(-PW / 2 - owner.pos.x, owner.pos.z);
         if (distToGoal < 28 && Math.random() < 0.05) {
-          const targetZ = (Math.random() - 0.5) * GOAL_W * 0.7;
-          const dir = new THREE.Vector3(-PW / 2 - owner.pos.x, 0, targetZ - owner.pos.z).normalize();
-          s.ball.vel.set(dir.x * 42, 0, dir.z * 42);
-          s.ball.owner = null;
+          doShoot(s, "away");
         } else if (Math.random() < 0.025) {
-          const best = findPassTarget(s, "away");
-          if (best >= 0) {
-            const t = s.players[best];
-            const dir = new THREE.Vector3().subVectors(t.pos, owner.pos).normalize();
-            s.ball.vel.set(dir.x * 26, 0, dir.z * 26);
-            s.ball.owner = null;
-          }
+          doPass(s, "away");
         }
       }
     }
@@ -718,21 +746,25 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       s.ball.vel.set(0, 0, 0);
     }
 
-    // Indicator
-    const cp2 = s.players[s.controlIdx];
-    s.indicator.position.set(cp2.pos.x, 0.05, cp2.pos.z);
+    // Indicators
+    s.indicatorHome.position.set(cpH.pos.x, 0.05, cpH.pos.z);
+    if (s.twoPlayer) {
+      s.indicatorAway.position.set(cpA.pos.x, 0.05, cpA.pos.z);
+    }
 
-    // Camera follow + shake
+    // Camera follow + shake — focus on ball region
+    const focusX = s.ball.pos.x;
+    const focusZ = s.ball.pos.z;
     const shakeX = s.cameraShake > 0 ? (Math.random() - 0.5) * s.cameraShake * 2 : 0;
     const shakeY = s.cameraShake > 0 ? (Math.random() - 0.5) * s.cameraShake : 0;
     if (s.cameraShake > 0) s.cameraShake = Math.max(0, s.cameraShake - dt * 1.2);
     const targetCam = new THREE.Vector3(
-      cp2.pos.x * 0.4 + shakeX,
+      focusX * 0.4 + shakeX,
       35 + shakeY,
-      cp2.pos.z * 0.4 + 42,
+      focusZ * 0.4 + 42,
     );
     s.camera.position.lerp(targetCam, 0.05);
-    s.camera.lookAt(cp2.pos.x * 0.5, 0, cp2.pos.z * 0.5);
+    s.camera.lookAt(focusX * 0.5, 0, focusZ * 0.5);
   }
 
   const mm = Math.floor(time / 60).toString().padStart(2, "0");
@@ -756,10 +788,13 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
       </div>
       <div className="relative w-full max-w-[960px] aspect-[16/10] rounded-lg overflow-hidden border-2 border-border shadow-2xl">
         <div ref={mountRef} className="absolute inset-0" />
-        {/* Aim legend HUD */}
         <div className="absolute top-3 left-3 flex flex-col gap-1 text-xs font-display tracking-wider bg-black/50 backdrop-blur px-3 py-2 rounded pointer-events-none">
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#22d3ee" }} /> PASS AIM (A)</div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#ef4444" }} /> SHOT AIM (D)</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#fde047" }} /> P1 SELECTED</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#22d3ee" }} /> PASS AIM</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#ef4444" }} /> SHOT AIM</div>
+          {twoPlayer && (
+            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded" style={{ background: "#f472b6" }} /> P2 SELECTED</div>
+          )}
         </div>
         {message && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -769,11 +804,23 @@ export function PitchGame({ home, away, duration = 90, onEnd }: Props) {
           </div>
         )}
       </div>
-      <div className="text-sm text-muted-foreground flex flex-wrap gap-x-6 gap-y-1 justify-center max-w-[960px]">
-        <span><kbd className="px-2 py-0.5 bg-muted rounded">Arrows</kbd> Move</span>
-        <span><kbd className="px-2 py-0.5 bg-muted rounded">A</kbd> / <kbd className="px-2 py-0.5 bg-muted rounded">Space</kbd> Pass</span>
-        <span><kbd className="px-2 py-0.5 bg-muted rounded">D</kbd> Shoot</span>
-        <span><kbd className="px-2 py-0.5 bg-muted rounded">S</kbd> Switch Player</span>
+      <div className="text-sm text-muted-foreground flex flex-col gap-1 items-center max-w-[960px]">
+        <div className="flex flex-wrap gap-x-5 gap-y-1 justify-center">
+          <span className="font-display text-primary">P1</span>
+          <span><kbd className="px-2 py-0.5 bg-muted rounded">Arrows</kbd> Move</span>
+          <span><kbd className="px-2 py-0.5 bg-muted rounded">A</kbd>/<kbd className="px-2 py-0.5 bg-muted rounded">Space</kbd> Pass</span>
+          <span><kbd className="px-2 py-0.5 bg-muted rounded">D</kbd> Shoot</span>
+          <span><kbd className="px-2 py-0.5 bg-muted rounded">S</kbd> Switch</span>
+        </div>
+        {twoPlayer && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1 justify-center">
+            <span className="font-display text-accent">P2</span>
+            <span><kbd className="px-2 py-0.5 bg-muted rounded">I J K L</kbd> Move</span>
+            <span><kbd className="px-2 py-0.5 bg-muted rounded">U</kbd> Pass</span>
+            <span><kbd className="px-2 py-0.5 bg-muted rounded">H</kbd> Shoot</span>
+            <span><kbd className="px-2 py-0.5 bg-muted rounded">G</kbd> Switch</span>
+          </div>
+        )}
       </div>
     </div>
   );
