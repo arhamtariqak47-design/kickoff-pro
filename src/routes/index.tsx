@@ -60,10 +60,9 @@ function Index() {
                 key={t.id}
                 onClick={() => {
                   if (screen.pick === "home") {
-                    if (screen.mode === "quick") {
+                    if (screen.mode === "quick" || screen.mode === "vs") {
                       setScreen({ s: "teamSelect", mode: screen.mode, pick: "away", home: t });
                     } else {
-                      // career/tournament: random opponent
                       const opp = pickOpp(t);
                       const total = screen.mode === "career" ? 5 : 3;
                       setScreen({ s: "match", mode: screen.mode, home: t, away: opp, round: 1, total, cupScore: { you: 0, opp: 0 } });
