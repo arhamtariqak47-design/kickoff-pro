@@ -19,7 +19,7 @@ type Screen =
   | { s: "match"; mode: Mode; home: Team; away: Team; round: number; total: number; cupScore: { you: number; opp: number } }
   | { s: "result"; mode: Mode; home: Team; away: Team; score: { home: number; away: number }; round: number; total: number; cupScore: { you: number; opp: number } };
 
-type Mode = "quick" | "career" | "tournament";
+type Mode = "quick" | "career" | "tournament" | "vs";
 
 function Index() {
   const [screen, setScreen] = useState<Screen>({ s: "menu" });
