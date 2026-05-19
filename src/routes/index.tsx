@@ -102,6 +102,7 @@ function Index() {
             home={screen.home}
             away={screen.away}
             duration={90}
+            twoPlayer={screen.mode === "vs"}
             onEnd={(result) => {
               const won = result.home > result.away;
               const cupScore = { you: screen.cupScore.you + (won ? 1 : 0), opp: screen.cupScore.opp + (won ? 0 : 1) };
