@@ -19,7 +19,7 @@ type Screen =
   | { s: "match"; mode: Mode; home: Team; away: Team; round: number; total: number; cupScore: { you: number; opp: number } }
   | { s: "result"; mode: Mode; home: Team; away: Team; score: { home: number; away: number }; round: number; total: number; cupScore: { you: number; opp: number } };
 
-type Mode = "quick" | "career" | "tournament";
+type Mode = "quick" | "career" | "tournament" | "vs";
 
 function Index() {
   const [screen, setScreen] = useState<Screen>({ s: "menu" });
@@ -37,10 +37,11 @@ function Index() {
         </header>
         <div className="grid gap-4 w-full max-w-md">
           <ModeButton title="Quick Play" desc="Jump straight into a single match" onClick={() => setScreen({ s: "teamSelect", mode: "quick", pick: "home" })} />
+          <ModeButton title="2 Players" desc="Local versus — P1 keys vs P2 keys on one keyboard" onClick={() => setScreen({ s: "teamSelect", mode: "vs", pick: "home" })} />
           <ModeButton title="Career" desc="Play a 5-match season as your club" onClick={() => setScreen({ s: "teamSelect", mode: "career", pick: "home" })} />
           <ModeButton title="Tournament" desc="Knockout cup — win 3 in a row" onClick={() => setScreen({ s: "teamSelect", mode: "tournament", pick: "home" })} />
         </div>
-        <footer className="mt-16 text-xs text-muted-foreground/60">Built for keyboard · Arrows · A · S · D</footer>
+        <footer className="mt-16 text-xs text-muted-foreground/60">P1: Arrows · A · S · D &nbsp;·&nbsp; P2: I J K L · U · G · H</footer>
       </main>
     );
   }
@@ -59,10 +60,9 @@ function Index() {
                 key={t.id}
                 onClick={() => {
                   if (screen.pick === "home") {
-                    if (screen.mode === "quick") {
+                    if (screen.mode === "quick" || screen.mode === "vs") {
                       setScreen({ s: "teamSelect", mode: screen.mode, pick: "away", home: t });
                     } else {
-                      // career/tournament: random opponent
                       const opp = pickOpp(t);
                       const total = screen.mode === "career" ? 5 : 3;
                       setScreen({ s: "match", mode: screen.mode, home: t, away: opp, round: 1, total, cupScore: { you: 0, opp: 0 } });
@@ -102,6 +102,7 @@ function Index() {
             home={screen.home}
             away={screen.away}
             duration={90}
+            twoPlayer={screen.mode === "vs"}
             onEnd={(result) => {
               const won = result.home > result.away;
               const cupScore = { you: screen.cupScore.you + (won ? 1 : 0), opp: screen.cupScore.opp + (won ? 0 : 1) };
